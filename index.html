@@ -167,3 +167,30 @@ loop();
 
 </body>
 </html>
+<script>
+let npcAlive = true;
+
+function spawnNPC() {
+  const npc = document.createElement("div");
+  npc.innerText = "NPC";
+  npc.style.position = "absolute";
+  npc.style.left = "100px";
+  npc.style.top = "100px";
+  npc.style.background = "red";
+  npc.style.padding = "10px";
+
+  document.body.appendChild(npc);
+
+  npc.onclick = () => {
+    npc.remove();
+    npcAlive = false;
+
+    setTimeout(() => {
+      spawnNPC(); // respawn
+      npcAlive = true;
+    }, 3000);
+  };
+}
+
+spawnNPC();
+</script>
