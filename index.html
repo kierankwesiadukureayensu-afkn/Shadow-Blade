@@ -1,196 +1,346 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Sailor Realm Mini</title>
+  <title>Sailor MMO V7</title>
   <style>
-    body { margin:0; background:#020617; font-family:Arial; overflow:hidden; }
-    canvas { display:block; margin:auto; background:#0ea5e9; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #1e90ff;
+      font-family: Arial;
+    }
+
+    #world {
+      position: absolute;
+      width: 5000px;
+      height: 5000px;
+      background: linear-gradient(#3bb3ff, #004a99);
+    }
+
+    #player {
+      width: 30px;
+      height: 30px;
+      background: yellow;
+      position: absolute;
+      border-radius: 50%;
+    }
+
+    .npc {
+      width: 40px;
+      height: 40px;
+      background: purple;
+      position: absolute;
+      border-radius: 50%;
+    }
+
+    .boss {
+      width: 100px;
+      height: 100px;
+      background: darkred;
+      position: absolute;
+      border-radius: 50%;
+    }
+
+    #ship {
+      width: 80px;
+      height: 40px;
+      background: brown;
+      position: absolute;
+      display: none;
+    }
+
     #ui {
-      position:absolute;
-      top:10px;
-      left:10px;
-      color:white;
-      font-size:14px;
-      background:rgba(0,0,0,0.4);
-      padding:10px;
-      border-radius:8px;
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 10px;
+      border-radius: 10px;
+      width: 250px;
     }
-    #menu {
-      position:absolute;
-      top:50%;
-      left:50%;
-      transform:translate(-50%,-50%);
-      background:#111827;
-      color:white;
-      padding:20px;
-      border-radius:10px;
-      text-align:center;
-    }
-    button {
-      margin:5px;
-      padding:10px;
-      cursor:pointer;
-      border:none;
-      border-radius:6px;
+
+    #dialogue {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      color: black;
+      padding: 10px;
+      display: none;
+      border-radius: 10px;
+      width: 300px;
     }
   </style>
 </head>
 <body>
 
 <div id="ui">
-  ❤️ HP: <span id="hp">100</span><br>
-  🍎 Fruit: <span id="fruit">None</span>
+  HP: <span id="hp">100</span><br>
+  Level: <span id="level">1</span><br>
+  Quest: <span id="quest">None</span><br>
+  Ship: <span id="shipState">Land</span>
 </div>
 
-<div id="menu">
-  <h3>Choose Devil Fruit 🍎</h3>
-  <button onclick="choose('fire')">🔥 Fire</button>
-  <button onclick="choose('ice')">❄️ Ice</button>
-  <button onclick="choose('lightning')">⚡ Lightning</button>
-</div>
+<div id="dialogue"></div>
 
-<canvas id="game" width="800" height="450"></canvas>
+<div id="world">
+  <div id="player"></div>
+  <div id="ship"></div>
+</div>
 
 <script>
-const c = document.getElementById("game");
-const ctx = c.getContext("2d");
 
-let player = { x:400, y:225, hp:100, fruit:null };
-let keys = {};
+/* ======================
+   PLAYER
+====================== */
+let player = {
+  x: 500,
+  y: 500,
+  speed: 6,
+  hp: 100,
+  level: 1,
+  xp: 0,
+  inShip: false,
+  quest: null
+};
 
-document.addEventListener("keydown", e=>keys[e.key]=true);
-document.addEventListener("keyup", e=>keys[e.key]=false);
+/* ======================
+   WORLD
+====================== */
+const world = document.getElementById("world");
+const playerEl = document.getElementById("player");
+const shipEl = document.getElementById("ship");
 
-function choose(f){
-  player.fruit = f;
-  document.getElementById("fruit").innerText = f;
-  document.getElementById("menu").style.display="none";
-}
-
-function move(){
-  if(keys["w"]||keys["ArrowUp"]) player.y-=3;
-  if(keys["s"]||keys["ArrowDown"]) player.y+=3;
-  if(keys["a"]||keys["ArrowLeft"]) player.x-=3;
-  if(keys["d"]||keys["ArrowRight"]) player.x+=3;
-}
-
-let enemies = [
-  {x:200,y:200,hp:30},
-  {x:600,y:300,hp:30}
+/* ======================
+   ISLANDS
+====================== */
+let islands = [
+  { x: 500, y: 500, r: 250 },
+  { x: 2000, y: 800, r: 300 },
+  { x: 3500, y: 2000, r: 350 }
 ];
 
-document.addEventListener("keydown", e=>{
-  if(e.code==="Space"){
-    skill();
-  }
+islands.forEach(i => {
+  let el = document.createElement("div");
+  el.style.position = "absolute";
+  el.style.width = i.r + "px";
+  el.style.height = i.r + "px";
+  el.style.left = i.x + "px";
+  el.style.top = i.y + "px";
+  el.style.background = "green";
+  el.style.borderRadius = "50%";
+  world.appendChild(el);
 });
 
-function skill(){
-  enemies.forEach(e=>{
-    let dx = e.x-player.x;
-    let dy = e.y-player.y;
-    let dist = Math.sqrt(dx*dx+dy*dy);
+/* ======================
+   NPC + QUEST SYSTEM
+====================== */
+let npcs = [];
 
-    if(dist<100){
-      e.hp -= 20;
-    }
-  });
+function spawnNPC(x, y) {
+  let el = document.createElement("div");
+  el.className = "npc";
+
+  let npc = {
+    x,
+    y,
+    questGiven: false,
+    quest: {
+      name: "Kill Pirates",
+      goal: 3,
+      progress: 0,
+      reward: 50
+    },
+    el
+  };
+
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+
+  el.onclick = () => talkToNPC(npc);
+
+  world.appendChild(el);
+  npcs.push(npc);
 }
 
-function drawOcean(){
-  ctx.fillStyle="#0284c7";
-  ctx.fillRect(0,0,800,450);
-}
+/* ======================
+   QUEST DIALOGUE SYSTEM
+====================== */
+const dialogue = document.getElementById("dialogue");
 
-function drawIslands(){
-  ctx.fillStyle="#166534";
-  ctx.fillRect(150,120,160,100);
-  ctx.fillRect(500,260,180,120);
-}
+function talkToNPC(npc) {
+  dialogue.style.display = "block";
 
-function drawPlayer(){
-  ctx.fillStyle = player.fruit==="fire"?"orange":
-                  player.fruit==="ice"?"cyan":
-                  player.fruit==="lightning"?"yellow":"white";
+  if (!player.quest) {
+    dialogue.innerHTML = `
+      <b>NPC:</b> Help me!<br>
+      Quest: ${npc.quest.name}<br>
+      Reward: ${npc.quest.reward} Gold<br><br>
+      <button onclick="acceptQuest()">Accept</button>
+    `;
 
-  ctx.beginPath();
-  ctx.arc(player.x,player.y,12,0,Math.PI*2);
-  ctx.fill();
-}
-
-function drawEnemies(){
-  enemies.forEach((e,i)=>{
-    if(e.hp<=0){ enemies.splice(i,1); return; }
-
-    ctx.fillStyle="red";
-    ctx.beginPath();
-    ctx.arc(e.x,e.y,10,0,Math.PI*2);
-    ctx.fill();
-
-    // simple AI
-    let dx = player.x - e.x;
-    let dy = player.y - e.y;
-    e.x += dx*0.01;
-    e.y += dy*0.01;
-
-    // damage
-    let dist = Math.sqrt(dx*dx+dy*dy);
-    if(dist<15){
-      player.hp -= 0.2;
-    }
-  });
-}
-
-function loop(){
-  ctx.clearRect(0,0,800,450);
-
-  drawOcean();
-  drawIslands();
-
-  move();
-  drawPlayer();
-  drawEnemies();
-
-  document.getElementById("hp").innerText = Math.floor(player.hp);
-
-  if(player.hp<=0){
-    alert("You died!");
-    location.reload();
+    window.currentQuestNPC = npc;
+  } else {
+    dialogue.innerHTML = `
+      <b>NPC:</b> You already have a quest!
+    `;
   }
+}
+
+function acceptQuest() {
+  player.quest = window.currentQuestNPC.quest;
+  document.getElementById("quest").innerText = player.quest.name;
+  dialogue.style.display = "none";
+}
+
+/* ======================
+   SHIP SYSTEM
+====================== */
+let ship = {
+  x: 600,
+  y: 600,
+  active: false,
+  speed: 10
+};
+
+function toggleShip() {
+  player.inShip = !player.inShip;
+
+  ship.active = player.inShip;
+  shipEl.style.display = player.inShip ? "block" : "none";
+}
+
+/* ======================
+   CANNON SYSTEM
+====================== */
+let cannonBalls = [];
+
+function shootCannon() {
+  if (!player.inShip) return;
+
+  cannonBalls.push({
+    x: player.x,
+    y: player.y,
+    vx: 5,
+    vy: 0
+  });
+}
+
+function updateCannonBalls() {
+  cannonBalls.forEach(b => {
+    b.x += b.vx;
+    b.y += b.vy;
+
+    bosses.forEach(boss => {
+      if (Math.hypot(b.x - boss.x, b.y - boss.y) < 60) {
+        boss.hp -= 20;
+      }
+    });
+  });
+}
+
+/* ======================
+   BOSS SYSTEM
+====================== */
+let bosses = [
+  { x: 2500, y: 1500, hp: 300, el: document.createElement("div") }
+];
+
+bosses.forEach(b => {
+  b.el.className = "boss";
+  world.appendChild(b.el);
+});
+
+/* ======================
+   MOVEMENT + CAMERA
+====================== */
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+function move() {
+  let speed = player.inShip ? ship.speed : player.speed;
+
+  if (keys["w"]) player.y -= speed;
+  if (keys["s"]) player.y += speed;
+  if (keys["a"]) player.x -= speed;
+  if (keys["d"]) player.x += speed;
+
+  world.style.transform =
+    `translate(${-player.x + 400}px, ${-player.y + 300}px)`;
+
+  playerEl.style.left = player.x + "px";
+  playerEl.style.top = player.y + "px";
+
+  if (player.inShip) {
+    ship.x = player.x;
+    ship.y = player.y;
+
+    shipEl.style.left = ship.x + "px";
+    shipEl.style.top = ship.y + "px";
+  }
+}
+
+/* ======================
+   QUEST PROGRESSION
+====================== */
+function updateQuest() {
+  if (!player.quest) return;
+
+  player.quest.progress++;
+
+  if (player.quest.progress >= player.quest.goal) {
+    alert("Quest Complete!");
+    player.xp += player.quest.reward;
+    player.quest = null;
+    document.getElementById("quest").innerText = "None";
+  }
+}
+
+/* ======================
+   BOSS AI
+====================== */
+function bossAI() {
+  bosses.forEach(b => {
+    b.x += (player.x - b.x) * 0.01;
+    b.y += (player.y - b.y) * 0.01;
+
+    b.el.style.left = b.x + "px";
+    b.el.style.top = b.y + "px";
+  });
+}
+
+/* ======================
+   INPUT ACTIONS
+====================== */
+document.addEventListener("keydown", e => {
+  if (e.key === " ") updateQuest();
+  if (e.key === "e") toggleShip();
+  if (e.key === "q") shootCannon();
+});
+
+/* ======================
+   SPAWN WORLD
+====================== */
+spawnNPC(1200, 1200);
+spawnNPC(3000, 1800);
+
+/* ======================
+   GAME LOOP
+====================== */
+function loop() {
+  move();
+  bossAI();
+  updateCannonBalls();
 
   requestAnimationFrame(loop);
 }
 
 loop();
+
 </script>
 
 </body>
 </html>
-<script>
-let npcAlive = true;
-
-function spawnNPC() {
-  const npc = document.createElement("div");
-  npc.innerText = "NPC";
-  npc.style.position = "absolute";
-  npc.style.left = "100px";
-  npc.style.top = "100px";
-  npc.style.background = "red";
-  npc.style.padding = "10px";
-
-  document.body.appendChild(npc);
-
-  npc.onclick = () => {
-    npc.remove();
-    npcAlive = false;
-
-    setTimeout(() => {
-      spawnNPC(); // respawn
-      npcAlive = true;
-    }, 3000);
-  };
-}
-
-spawnNPC();
-</script>
