@@ -1,251 +1,253 @@
+// ===== IMPORTS =====
+const http = require("http");
+const WebSocket = require("ws");
+
+// ===== HTTP SERVER (SERVES GAME) =====
+const server = http.createServer((req, res) => {
+res.writeHead(200, {"Content-Type":"text/html"});
+
+res.end(`
 <!DOCTYPE html>
 <html>
-<head>
-<style>
-body {
-  margin: 0;
-  overflow: hidden;
-  background: radial-gradient(circle, #0b1b2b, #000);
-  font-family: Arial;
-}
+<body style="margin:0;background:black;color:white;font-family:sans-serif;">
+<canvas id="c"></canvas>
 
-/* UI */
-#ui {
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  color: white;
-}
-
-.bar {
-  width: 220px;
-  height: 12px;
-  background: #222;
-  margin: 4px 0;
-  border-radius: 5px;
-  overflow: hidden;
-}
-
-#hp { height: 100%; background: red; width: 100%; }
-#energy { height: 100%; background: cyan; width: 100%; }
-
-#fruit, #mastery {
-  margin-top: 6px;
-  padding: 4px;
-  background: rgba(0,0,0,0.5);
-  border-radius: 4px;
-}
-
-#hotbar {
-  display: flex;
-  gap: 5px;
-  margin-top: 10px;
-}
-
-#hotbar div {
-  width: 40px;
-  height: 40px;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-</style>
-</head>
-
-<body>
-
-<div id="ui">
-  <div class="bar"><div id="hp"></div></div>
-  <div class="bar"><div id="energy"></div></div>
-
-  <div id="fruit">🍎 No Fruit</div>
-  <div id="mastery">Mastery: 1</div>
-
-  <div id="hotbar">
-    <div>1</div><div>2</div><div>3</div><div>4</div>
-  </div>
+<div style="position:fixed;bottom:10px;left:10px;">
+<div id="hp"></div>
+<div id="energy"></div>
+<div id="mastery"></div>
+<div id="fruit"></div>
 </div>
 
 <script>
-/********************
- PLAYER
-********************/
-let player = {
-  x: 500,
-  y: 500,
-  hp: 100,
-  maxHp: 100,
-  energy: 100,
-  maxEnergy: 100,
-  power: 1,
-  speed: 5
-};
+// ===== CANVAS =====
+let c = document.getElementById("c");
+let ctx = c.getContext("2d");
+c.width = innerWidth;
+c.height = innerHeight;
 
+// ===== CLIENT STATE =====
+let socket = new WebSocket("ws://" + location.host);
+let myId;
+let players = {};
+let fruits = [];
+let bosses = [];
+let projectiles = [];
+
+let player = {x:0,y:0};
 let keys = {};
-let cooldown = false;
 
-/********************
- FRUIT + MASTERY
-********************/
-let currentFruit = null;
+// ===== INPUT =====
+onkeydown = e => keys[e.key] = true;
+onkeyup = e => keys[e.key] = false;
 
-let mastery = {
-  level: 1,
-  xp: 0
+// ===== NETWORK =====
+socket.onmessage = msg => {
+let d = JSON.parse(msg.data);
+if (d.type === "init") myId = d.id;
+
+players = d.players;
+fruits = d.fruits;
+bosses = d.bosses;
+projectiles = d.projectiles;
 };
 
-/********************
- BOSSES
-********************/
-let bosses = [
-  { x: 900, y: 400, hp: 300 }
-];
-
-/********************
- INPUT
-********************/
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
-
-/********************
- MOVEMENT
-********************/
-function move() {
-  if (keys["w"]) player.y -= player.speed;
-  if (keys["s"]) player.y += player.speed;
-  if (keys["a"]) player.x -= player.speed;
-  if (keys["d"]) player.x += player.speed;
+// ===== ABILITIES =====
+function useAbility() {
+socket.send(JSON.stringify({type:"ability"}));
 }
 
-/********************
- COMBAT SYSTEM
-********************/
-function attack() {
+// ===== LOOP =====
+function loop(){
 
-  if (cooldown || player.energy < 10) return;
+// movement
+if(keys["w"]) player.y -= 4;
+if(keys["s"]) player.y += 4;
+if(keys["a"]) player.x -= 4;
+if(keys["d"]) player.x += 4;
 
-  cooldown = true;
-  player.energy -= 10;
+// send to server
+socket.send(JSON.stringify({type:"move",x:player.x,y:player.y}));
 
-  bosses.forEach(b => {
+ctx.clearRect(0,0,c.width,c.height);
 
-    let d = Math.hypot(player.x - b.x, player.y - b.y);
-
-    if (d < 120) {
-
-      let dmg = 20 * player.power * getMultiplier();
-      b.hp -= dmg;
-
-      // hit feedback
-      document.body.style.filter = "brightness(2)";
-      setTimeout(() => document.body.style.filter = "", 80);
-
-      gainMastery(5);
-    }
-  });
-
-  setTimeout(() => cooldown = false, 250);
+// ===== DRAW PLAYERS =====
+for(let id in players){
+let p = players[id];
+ctx.fillStyle = id === myId ? "cyan" : "blue";
+ctx.fillRect(p.x,p.y,20,20);
 }
 
-/********************
- FRUIT SYSTEM
-********************/
-function eatFruit() {
+// ===== DRAW BOSSES =====
+bosses.forEach(b=>{
+ctx.fillStyle = "red";
+ctx.fillRect(b.x,b.y,50,50);
+ctx.fillStyle = "white";
+ctx.fillText(Math.floor(b.hp),b.x,b.y-5);
+});
 
-  if (currentFruit) return;
+// ===== DRAW FRUITS =====
+fruits.forEach(f=>{
+ctx.fillStyle = "orange";
+ctx.fillRect(f.x,f.y,10,10);
 
-  currentFruit = { name: "Fire Fruit" };
+// pickup
+if(Math.hypot(player.x-f.x,player.y-f.y)<20){
+socket.send(JSON.stringify({type:"pickup",id:f.id}));
+}
+});
 
-  player.power += 2;
+// ===== DRAW PROJECTILES =====
+projectiles.forEach(p=>{
+ctx.fillStyle="yellow";
+ctx.fillRect(p.x,p.y,6,6);
+});
 
-  document.getElementById("fruit").innerText =
-    "🍎 " + currentFruit.name;
+// ===== UI =====
+let me = players[myId];
+if(me){
+hp.innerText = "HP: " + Math.floor(me.hp);
+energy.innerText = "Energy: " + Math.floor(me.energy);
+mastery.innerText = "Mastery: " + Math.floor(me.mastery);
+fruit.innerText = "Fruit: " + (me.fruit || "None");
 }
 
-/********************
- MASTERY SYSTEM
-********************/
-function gainMastery(xp) {
-
-  mastery.xp += xp;
-
-  if (mastery.xp >= mastery.level * 20) {
-    mastery.xp = 0;
-    mastery.level++;
-    player.power += 0.2;
-  }
-
-  document.getElementById("mastery").innerText =
-    "Mastery: " + mastery.level;
+requestAnimationFrame(loop);
 }
-
-function getMultiplier() {
-  return 1 + mastery.level * 0.05;
-}
-
-/********************
- UI UPDATE
-********************/
-function updateUI() {
-
-  document.getElementById("hp").style.width =
-    (player.hp / player.maxHp * 100) + "%";
-
-  document.getElementById("energy").style.width =
-    (player.energy / player.maxEnergy * 100) + "%";
-}
-
-/********************
- SAVE / LOAD
-********************/
-function saveGame() {
-  localStorage.setItem("save", JSON.stringify({
-    player,
-    mastery,
-    currentFruit
-  }));
-}
-
-function loadGame() {
-  let data = JSON.parse(localStorage.getItem("save"));
-  if (!data) return;
-
-  player = data.player;
-  mastery = data.mastery;
-  currentFruit = data.currentFruit;
-
-  if (currentFruit) {
-    document.getElementById("fruit").innerText =
-      "🍎 " + currentFruit.name;
-  }
-}
-
-/********************
- LOOP
-********************/
-function loop() {
-
-  move();
-  updateUI();
-
-  requestAnimationFrame(loop);
-}
-
 loop();
 
-/********************
- CONTROLS
-********************/
-document.addEventListener("keydown", e => {
+// ===== CONTROLS =====
+onkeydown = e=>{
+keys[e.key]=true;
 
-  if (e.key === " ") attack();
-  if (e.key === "f") eatFruit();
-  if (e.key === "p") saveGame();
-  if (e.key === "o") loadGame();
-});
+if(e.key===" ") useAbility();
+};
+onkeyup = e=>keys[e.key]=false;
+
 </script>
-
 </body>
 </html>
+`);
+});
+
+// ===== WEBSOCKET SERVER =====
+const wss = new WebSocket.Server({ server });
+
+// ===== WORLD STATE =====
+let players = {};
+let fruits = [];
+let bosses = [{id:1,x:500,y:300,hp:500}];
+let projectiles = [];
+
+// ===== FRUIT SPAWNER =====
+setInterval(()=>{
+fruits.push({
+id:Math.random().toString(36).substr(2,6),
+x:Math.random()*800,
+y:Math.random()*600
+});
+},15000);
+
+// ===== GAME LOOP =====
+setInterval(()=>{
+
+// move projectiles
+projectiles.forEach(p=>{
+p.x += p.vx;
+p.y += p.vy;
+
+// hit players
+Object.entries(players).forEach(([id,pl])=>{
+if(id!==p.owner && Math.hypot(p.x-pl.x,p.y-pl.y)<15){
+pl.hp -= 10;
+}
+});
+
+// hit bosses
+bosses.forEach(b=>{
+if(Math.hypot(p.x-b.x,p.y-b.y)<30){
+b.hp -= 15;
+}
+});
+});
+
+// regen energy
+Object.values(players).forEach(p=>{
+p.energy = Math.min(100, p.energy + 0.5);
+});
+
+broadcast();
+
+},50);
+
+// ===== CONNECTION =====
+wss.on("connection", ws=>{
+
+let id = Math.random().toString(36).substr(2,9);
+
+players[id] = {
+x:100,
+y:100,
+hp:100,
+energy:100,
+fruit:null,
+mastery:1
+};
+
+ws.send(JSON.stringify({type:"init",id}));
+
+ws.on("message", msg=>{
+
+let d = JSON.parse(msg);
+let p = players[id];
+if(!p) return;
+
+// movement
+if(d.type==="move"){
+p.x = d.x;
+p.y = d.y;
+}
+
+// fruit pickup
+if(d.type==="pickup"){
+let i = fruits.findIndex(f=>f.id===d.id);
+if(i!==-1){
+p.fruit = "Fire";
+fruits.splice(i,1);
+}
+}
+
+// ability
+if(d.type==="ability"){
+if(p.energy < 10) return;
+
+p.energy -= 10;
+p.mastery += 0.2;
+
+// shoot projectile
+projectiles.push({
+x:p.x,
+y:p.y,
+vx:(Math.random()-0.5)*6,
+vy:(Math.random()-0.5)*6,
+owner:id
+});
+}
+
+});
+
+// disconnect
+ws.on("close",()=>delete players[id]);
+
+});
+
+// ===== BROADCAST =====
+function broadcast(){
+let data = JSON.stringify({players,fruits,bosses,projectiles});
+wss.clients.forEach(c=>c.send(data));
+}
+
+// ===== START SERVER =====
+server.listen(3000,()=>{
+console.log("🌍 MMO running at http://localhost:3000");
+});
